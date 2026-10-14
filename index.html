@@ -1,1 +1,280 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test pozornosti – Knihobot</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1b;--muted:#6b6a66;--line:#dedcd6;--acc:#1f6f5c;--acc2:#e8f3ef;--bad:#b3261e;--warn:#a86a00;--ok:#1f6f5c}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px 40px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px}
+h1{font-size:22px;margin:0 0 12px}
+h2{font-size:18px;margin:0 0 10px}
+p,li{line-height:1.5}
+.muted{color:var(--muted);font-size:14px}
+.btn{appearance:none;border:0;background:var(--acc);color:#fff;font-size:17px;font-weight:600;padding:13px 22px;border-radius:10px;cursor:pointer}
+.btn:active{transform:scale(.98)}
+.btn.sec{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:14px;color:var(--muted)}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-bottom:16px}
+.bar>i{display:block;height:100%;background:var(--acc);width:0}
+.target{text-align:center;margin:6px 0 18px}
+.target .lbl{font-size:14px;color:var(--muted)}
+.target .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:34px;font-weight:700;letter-spacing:2px;margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.opt{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px;font-weight:600;padding:18px 4px;background:#fff;border:2px solid var(--line);border-radius:10px;cursor:pointer;color:var(--ink)}
+.opt:hover{border-color:var(--acc)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.pair .side{text-align:center}
+.pair .side .lbl{font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.pair svg{width:100%;height:auto;max-width:260px;border-radius:8px}
+.answers{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.answers .btn{width:100%;padding:16px}
+.answers .no{background:#8a3b12}
+.flash{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .15s}
+.flash.bad{background:rgba(179,38,30,.18);opacity:1}
+.codebox{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:24px;font-weight:700;letter-spacing:1px;text-align:center;background:var(--acc2);border:2px dashed var(--acc);border-radius:10px;padding:18px 8px;margin:16px 0;word-break:break-all;user-select:all}
+.center{text-align:center}
+textarea{width:100%;min-height:120px;font-family:ui-monospace,monospace;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:14px}
+th,td{border-bottom:1px solid var(--line);padding:6px 6px;text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.tw{overflow-x:auto}
+.g{color:var(--ok);font-weight:700}.a{color:var(--warn);font-weight:700}.r{color:var(--bad);font-weight:700}
+@media (max-width:480px){.opt{font-size:16px;padding:16px 2px}.target .code{font-size:28px}.codebox{font-size:19px}}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card" id="app"></div></div>
+<div class="flash" id="flash"></div>
+<script>
+(function(){
+"use strict";
+var T1_TRIALS=8, T2_TRIALS=10, ROUNDS=2, PRACTICE=2;
+var KEY=[7,22,3,31,14,9,27,1,18,25,11,5,33];
+var app=document.getElementById('app');
+var rnd=function(n){return Math.floor(Math.random()*n)};
+var pick=function(a){return a[rnd(a.length)]};
+var shuffle=function(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=rnd(i+1),t=a[i];a[i]=a[j];a[j]=t}return a};
+var pad=function(n){return (n<10?'0':'')+n};
+var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
 
+/* ---------- stav ---------- */
+var res={t1:[],t2:[]}; // pro kazde kolo {times:[], errors:n}
+var switches=0, timing=false, startAll=0;
+document.addEventListener('visibilitychange',function(){if(document.hidden&&timing)switches++});
+window.addEventListener('blur',function(){if(timing)switches++});
+
+/* ---------- uloha 1: lokace ---------- */
+var LET='ABCDEFGH', POS='ABCD';
+function locStr(o){return o.r+'-'+pad(o.a)+'-'+pad(o.s)+'-'+o.p}
+function newLoc(){return{r:LET[rnd(8)],a:1+rnd(40),s:1+rnd(6),p:POS[rnd(4)]}}
+function mutate(o){
+  var c={r:o.r,a:o.a,s:o.s,p:o.p}, k=rnd(6);
+  if(k===0){var sw=parseInt(String(pad(c.a)).split('').reverse().join(''),10);c.a=(sw!==c.a&&sw>0)?sw:c.a+1}
+  else if(k===1){c.a=Math.max(1,c.a+(Math.random()<.5?-1:1))}
+  else if(k===2){c.s=c.s===6?5:(c.s===1?2:c.s+(Math.random()<.5?-1:1))}
+  else if(k===3){c.p=POS[(POS.indexOf(c.p)+1+rnd(3))%4]}
+  else if(k===4){var sim={A:'H',B:'D',C:'G',D:'B',E:'F',F:'E',G:'C',H:'A'};c.r=sim[c.r]}
+  else {var t=c.s;c.s=Math.min(6,Math.max(1,c.a%10||1));if(c.s===t)c.s=t===6?5:t+1}
+  return c;
+}
+function makeT1(){
+  var t=newLoc(), ts=locStr(t), set={}; set[ts]=1; var opts=[ts], guard=0;
+  while(opts.length<9&&guard<500){guard++;var m=mutate(t);if(guard>200)m=mutate(m);var s=locStr(m);if(!set[s]){set[s]=1;opts.push(s)}}
+  return{target:ts,opts:shuffle(opts)};
+}
+
+/* ---------- uloha 2: kontrola shody ---------- */
+var TITLES=['Zahrada u řeky','Poslední léto','Tichý přístav','Cesta na sever','Stíny města','Dům na kopci','Malý atlas hvězd','Příběhy z hor','Čas sklizně','Ostrov v mlze','Kuchařka pro každý den','Dějiny řemesel'];
+var AUTHORS=['Jana Nováková','Petr Svoboda','Eva Dvořáková','Tomáš Černý','Marie Procházková','Karel Kučera','Lucie Veselá','Jiří Horák','Věra Růžičková','Miloš Šťastný'];
+var COLORS=['#2f5d8a','#8a3b2f','#3f7a4a','#6b4f8a','#9a7a2a','#2f7a7a','#7a2f55','#4a4a4a'];
+var STATES=['Jako nová','Velmi dobrý','Dobrý'];
+var STRIP={'á':'a','č':'c','ď':'d','é':'e','ě':'e','í':'i','ň':'n','ó':'o','ř':'r','š':'s','ť':'t','ú':'u','ů':'u','ý':'y','ž':'z','Č':'C','Š':'S','Ž':'Z','Ř':'R','Ď':'D'};
+function stripOne(s){var idx=[];for(var i=0;i<s.length;i++)if(STRIP[s[i]])idx.push(i);if(!idx.length)return null;var i2=pick(idx);return s.slice(0,i2)+STRIP[s[i2]]+s.slice(i2+1)}
+function isbn(){var d='';for(var i=0;i<4;i++)d+=rnd(10);var e='';for(i=0;i<3;i++)e+=rnd(10);return'978-80-'+d+'-'+e+'-'+rnd(10)}
+function isbnMut(s){
+  var pos=[];for(var i=7;i<s.length;i++)if(/\d/.test(s[i]))pos.push(i);
+  if(Math.random()<.5){ // prohozeni sousednich
+    for(var g=0;g<30;g++){var p=pick(pos);if(/\d/.test(s[p+1]||'')&&s[p]!==s[p+1])return s.slice(0,p)+s[p+1]+s[p]+s.slice(p+2)}
+  }
+  var q=pick(pos),nd=String((parseInt(s[q],10)+1+rnd(8))%10);return s.slice(0,q)+nd+s.slice(q+1);
+}
+function makeBook(){return{title:pick(TITLES),author:pick(AUTHORS),color:pick(COLORS),isbn:isbn(),ed:1+rnd(5),state:pick(STATES),sticker:Math.random()<.5}}
+function makeT2(){
+  var a=makeBook(), b=JSON.parse(JSON.stringify(a)), same=Math.random()<.5, kind='';
+  if(!same){
+    var kinds=['isbn','isbn','title','author','ed','sticker','state'];
+    for(var g=0;g<20;g++){
+      kind=pick(kinds);
+      if(kind==='isbn'){b.isbn=isbnMut(a.isbn);break}
+      if(kind==='title'){var t=stripOne(a.title);if(t){b.title=t;break}}
+      if(kind==='author'){var u=stripOne(a.author);if(u){b.author=u;break}}
+      if(kind==='ed'){b.ed=a.ed===5?4:a.ed+1;break}
+      if(kind==='sticker'){b.sticker=!a.sticker;break}
+      if(kind==='state'){b.state=STATES[(STATES.indexOf(a.state)+1)%3];break}
+    }
+  }
+  return{a:a,b:b,same:same,kind:kind};
+}
+function bookSVG(k){
+  var lines=wrap(k.title,14);
+  var tl=lines.map(function(l,i){return'<text x="110" y="'+(92+i*24)+'" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">'+esc(l)+'</text>'}).join('');
+  var st=k.sticker?'<circle cx="178" cy="36" r="17" fill="#f2c94c" stroke="#fff" stroke-width="2"/><text x="178" y="41" text-anchor="middle" font-size="12" font-weight="700" fill="#5a4300">-20%</text>':'';
+  return '<svg viewBox="0 0 220 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="kniha">'+
+   '<rect x="0" y="0" width="220" height="330" rx="8" fill="#fbfaf7" stroke="#dedcd6"/>'+
+   '<rect x="16" y="12" width="188" height="200" rx="4" fill="'+k.color+'"/>'+
+   '<rect x="16" y="12" width="10" height="200" fill="rgba(0,0,0,.18)"/>'+st+tl+
+   '<text x="110" y="188" text-anchor="middle" font-size="14" fill="rgba(255,255,255,.92)">'+esc(k.author)+'</text>'+
+   '<text x="16" y="240" font-size="12" fill="#6b6a66">ISBN</text>'+
+   '<text x="16" y="258" font-size="16" font-family="ui-monospace,Menlo,Consolas,monospace" font-weight="700" fill="#1d1d1b">'+k.isbn+'</text>'+
+   '<text x="16" y="286" font-size="13" fill="#1d1d1b">'+k.ed+'. vydání</text>'+
+   '<text x="16" y="310" font-size="13" fill="#1d1d1b">Stav: '+esc(k.state)+'</text>'+
+   '</svg>';
+}
+function wrap(s,n){var w=s.split(' '),out=[],cur='';w.forEach(function(x){if((cur+' '+x).trim().length>n&&cur){out.push(cur);cur=x}else cur=(cur+' '+x).trim()});if(cur)out.push(cur);return out}
+
+/* ---------- obrazovky ---------- */
+function screen(html){app.innerHTML=html;window.scrollTo(0,0)}
+function flashBad(){var f=document.getElementById('flash');f.className='flash bad';setTimeout(function(){f.className='flash'},180)}
+
+function intro(){
+  screen('<h1>Test pozornosti a rychlosti</h1>'+
+  '<p>Čekají tě <b>2 krátké úlohy</b>, každá má <b>2 kola</b>. Celé to zabere zhruba <b>4–6 minut</b>.</p>'+
+  '<ul><li>Pracuj <b>co nejpřesněji a zároveň rychle</b> – měříme čas i chyby.</li>'+
+  '<li>Úlohy se opakují, takže by ti to mělo jít postupně rychleji.</li>'+
+  '<li>Během testu <b>nepřepínej do jiných oken ani aplikací</b>.</li>'+
+  '<li>Na konci dostaneš <b>kód</b>, který vložíš do dotazníku.</li></ul>'+
+  '<p class="muted">Nejlépe na počítači nebo telefonu v klidném prostředí.</p>'+
+  '<div class="center" style="margin-top:18px"><button class="btn" id="go">Začít</button></div>');
+  document.getElementById('go').onclick=function(){startAll=performance.now();taskIntro(1)};
+}
+
+function taskIntro(n){
+  if(n===1){
+    screen('<h2>Úloha 1 ze 2: Najdi správnou pozici</h2>'+
+    '<p>Nahoře uvidíš <b>pozici ve skladu</b> (např. <code>C-12-04-B</code>). Pod ní je 9 podobných pozic. <b>Klikni na tu, která je úplně stejná.</b></p>'+
+    '<p class="muted">Nejdřív 2 zkušební pokusy, pak '+ROUNDS+' kola po '+T1_TRIALS+' pokusech.</p>'+
+    '<div class="center"><button class="btn" id="go">Zkušební pokusy</button></div>');
+  } else {
+    screen('<h2>Úloha 2 ze 2: Sedí kniha se systémem?</h2>'+
+    '<p>Vlevo je kniha tak, jak je <b>v systému</b>. Vpravo je kniha, kterou <b>držíš v ruce</b>. Porovnej <b>název, autora, ISBN, vydání, stav i nálepku</b>.</p>'+
+    '<p>Pokud je vše stejné, klikni <b>Shoduje se</b>. Pokud se liší <b>cokoli</b>, klikni <b>Liší se</b>.</p>'+
+    '<p class="muted">Nejdřív 2 zkušební pokusy, pak '+ROUNDS+' kola po '+T2_TRIALS+' pokusech.</p>'+
+    '<div class="center"><button class="btn" id="go">Zkušební pokusy</button></div>');
+  }
+  document.getElementById('go').onclick=function(){runRound(n,0)};
+}
+
+function runRound(task,round){ // round 0 = zkusebni
+  var total=round===0?PRACTICE:(task===1?T1_TRIALS:T2_TRIALS), i=0, times=[], errors=0, t0=0;
+  timing=round>0;
+  function header(){
+    var lbl=round===0?'Zkušební pokus':'Kolo '+round+' / '+ROUNDS;
+    return '<div class="top"><span>Úloha '+task+' · '+lbl+'</span><span>'+(i+1)+' / '+total+'</span></div><div class="bar"><i style="width:'+(i/total*100)+'%"></i></div>';
+  }
+  function next(){
+    if(i>=total){timing=false;return done()}
+    if(task===1){
+      var q=makeT1();
+      screen(header()+'<div class="target"><div class="lbl">Najdi pozici</div><div class="code">'+q.target+'</div></div><div class="grid">'+
+        q.opts.map(function(o){return'<button class="opt" data-v="'+o+'">'+o+'</button>'}).join('')+'</div>');
+      Array.prototype.forEach.call(app.querySelectorAll('.opt'),function(b){b.onclick=function(){answer(b.getAttribute('data-v')===q.target)}});
+    } else {
+      var p=makeT2();
+      screen(header()+'<div class="pair"><div class="side"><div class="lbl">Systém</div>'+bookSVG(p.a)+'</div><div class="side"><div class="lbl">V ruce</div>'+bookSVG(p.b)+'</div></div>'+
+        '<div class="answers"><button class="btn" id="yes">Shoduje se</button><button class="btn no" id="no">Liší se</button></div>');
+      document.getElementById('yes').onclick=function(){answer(p.same)};
+      document.getElementById('no').onclick=function(){answer(!p.same)};
+    }
+    t0=performance.now();
+  }
+  var locked=false;
+  function answer(ok){
+    if(locked)return;locked=true;
+    times.push(performance.now()-t0);
+    if(!ok){errors++;flashBad()}
+    i++;setTimeout(function(){locked=false;next()},ok?120:260);
+  }
+  function done(){
+    if(round>0)res['t'+task].push({times:times,errors:errors});
+    if(round<ROUNDS){
+      var msg=round===0?'Zkušební pokusy hotové. Teď to začne naostro.':'Kolo '+round+' hotové.';
+      screen('<h2>'+msg+'</h2><p>Připrav se na <b>kolo '+(round+1)+' ze '+ROUNDS+'</b>. Čas běží až po kliknutí.</p><div class="center"><button class="btn" id="go">Pokračovat</button></div>');
+      document.getElementById('go').onclick=function(){runRound(task,round+1)};
+    } else if(task===1){taskIntro(2)}
+    else finish();
+  }
+  next();
+}
+
+/* ---------- kod ---------- */
+var B36='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+function enc(n,len){n=Math.max(0,Math.min(Math.pow(36,len)-1,Math.round(n)));var s='';for(var i=0;i<len;i++){s=B36[n%36]+s;n=Math.floor(n/36)}return s}
+function median(a){var b=a.slice().sort(function(x,y){return x-y}),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2}
+function buildCode(){
+  var s=String(ROUNDS===3?1:2);
+  ['t1','t2'].forEach(function(t){
+    res[t].forEach(function(r){s+=enc(median(r.times)/100,2)});
+    res[t].forEach(function(r){s+=enc(r.errors,1)});
+  });
+  s+=enc((performance.now()-startAll)/1000,3)+enc(switches,1);
+  var sum=0;for(var i=0;i<s.length;i++)sum+=(i+1)*B36.indexOf(s[i]);
+  s+=enc(sum%1296,2);
+  var o='';for(i=0;i<s.length;i++)o+=B36[(B36.indexOf(s[i])+KEY[i%KEY.length])%36];
+  return o.match(/.{1,5}/g).join('-');
+}
+function finish(){
+  var code=buildCode();
+  screen('<h1>Hotovo, díky!</h1><p>Tvůj kód je:</p><div class="codebox" id="code">'+code+'</div>'+
+  '<div class="center"><button class="btn" id="cp">Zkopírovat kód</button></div>'+
+  '<p style="margin-top:18px">Vrať se do dotazníku a <b>vlož tento kód</b> do pole „Kód z testu“. Kód si můžeš i opsat nebo vyfotit.</p>');
+  document.getElementById('cp').onclick=function(){
+    var b=this;
+    try{navigator.clipboard.writeText(code).then(function(){b.textContent='Zkopírováno ✓'},function(){sel()})}catch(e){sel()}
+    function sel(){var r=document.createRange();r.selectNodeContents(document.getElementById('code'));var w=getSelection();w.removeAllRanges();w.addRange(r);b.textContent='Kód je označený – zkopíruj ho'}
+  };
+}
+
+/* ---------- dekoder (#admin) ---------- */
+function decode(code){
+  var c=code.toUpperCase().replace(/[^0-9A-Z]/g,'');
+  var n=c.length===25?3:c.length===19?2:0;
+  if(!n)return{err:'špatná délka'};
+  var s='';for(var i=0;i<c.length;i++){var v=B36.indexOf(c[i]);s+=B36[(v-KEY[i%KEY.length]+36*2)%36]}
+  var body=s.slice(0,-2),chk=s.slice(-2),sum=0;
+  for(i=0;i<body.length;i++)sum+=(i+1)*B36.indexOf(body[i]);
+  if(enc(sum%1296,2)!==chk)return{err:'neplatný kód'};
+  var p=1,d=function(l){var n=0;for(var k=0;k<l;k++)n=n*36+B36.indexOf(body[p++]);return n};
+  var rep=function(f){var o=[];for(var k=0;k<n;k++)o.push(f());return o},tm=function(){return d(2)/10},er=function(){return d(1)};
+  var r={t1:rep(tm),e1:rep(er),t2:rep(tm),e2:rep(er),tot:d(3),sw:d(1)};
+  return r;
+}
+function admin(){
+  screen('<h1>Vyhodnocení kódů</h1><p class="muted">Vlož kódy (každý na nový řádek, volitelně „jméno;kód“). Časy = medián sekund na pokus v kole. Zrychlení = poslední kolo vs. kolo 1.</p>'+
+  '<textarea id="in" placeholder="Jan Novák;ABCDE-FGHIJ-KLMNO-PQRST-UVWXY"></textarea><div style="margin-top:10px"><button class="btn" id="go">Vyhodnotit</button></div><div class="tw" id="out"></div>'+
+  '<p class="muted" style="margin-top:16px">Orientační hranice (doporučuji zkalibrovat na 5–10 osvědčených zaměstnancích): přesnost <span class="g">≥95 %</span> / <span class="a">85–95 %</span> / <span class="r">&lt;85 %</span>; zrychlení <span class="g">≥10 %</span> / <span class="a">0–10 %</span> / <span class="r">zpomalení</span>; přepnutí okna &gt;0 = <span class="a">pozor</span>.</p>');
+  document.getElementById('go').onclick=function(){
+    var rows=document.getElementById('in').value.split(/\n/).map(function(x){return x.trim()}).filter(Boolean);
+    var h='<table><tr><th>Kandidát</th><th>Ú1 časy kol [s]</th><th>Ú1 chyby</th><th>Ú1 přesnost</th><th>Ú1 zrychlení</th><th>Ú2 časy kol [s]</th><th>Ú2 chyby</th><th>Ú2 přesnost</th><th>Ú2 zrychlení</th><th>Celkem</th><th>Přepnutí</th></tr>';
+    rows.forEach(function(line){
+      var parts=line.split(/[;\t]/),code=parts.pop(),name=parts.join(' ')||'—',r=decode(code);
+      if(r.err){h+='<tr><td>'+esc(name)+'</td><td colspan="10" class="r" style="text-align:left">'+esc(code)+' – '+r.err+'</td></tr>';return}
+      function acc(e,n){var a=1-e.reduce(function(x,y){return x+y},0)/(n*e.length),cl=a>=.95?'g':a>=.85?'a':'r';return'<span class="'+cl+'">'+Math.round(a*100)+' %</span>'}
+      function spd(t){if(!t[0])return'—';var x=(1-t[t.length-1]/t[0]),cl=x>=.10?'g':x>=0?'a':'r';return'<span class="'+cl+'">'+(x>=0?'+':'')+Math.round(x*100)+' %</span>'}
+      h+='<tr><td>'+esc(name)+'</td><td>'+r.t1.map(function(x){return x.toFixed(1)}).join(' / ')+'</td><td>'+r.e1.join('/')+'</td><td>'+acc(r.e1,T1_TRIALS)+'</td><td>'+spd(r.t1)+
+         '</td><td>'+r.t2.map(function(x){return x.toFixed(1)}).join(' / ')+'</td><td>'+r.e2.join('/')+'</td><td>'+acc(r.e2,T2_TRIALS)+'</td><td>'+spd(r.t2)+
+         '</td><td>'+Math.floor(r.tot/60)+':'+pad(r.tot%60)+'</td><td class="'+(r.sw?'a':'')+'">'+r.sw+'</td></tr>';
+    });
+    document.getElementById('out').innerHTML=h+'</table>';
+  };
+}
+
+window.__decode=decode;
+if(location.hash==='#admin'||window.ADMIN)admin();else intro();
+})();
+</script>
+</body>
+</html>
